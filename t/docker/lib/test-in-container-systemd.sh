@@ -37,7 +37,6 @@ docker_info="$(docker info >/dev/null 2>&1)" || SKIP test 1 # Docker doesn't see
 PLAN 1
 
 rsync -rt --size-only $thisdir/../../../sql $thisdir/src/
-# rsync -rt --size-only $thisdir/../../../mb  $thisdir/src/
 
 docker build -t $ident.image $thisdir
 
@@ -70,9 +69,9 @@ done
 
 docker exec "$containername" pwd >& /dev/null || (echo Cannot start container; exit 1 ) >&2
 
+echo "$*"
 echo 'bash -xe /opt/project/t/docker/lib/init-mirrorbrain.sh' | docker exec -i "$containername" bash -x
 
-# [ -z "$CIRCLE_JOB" ] || echo 'aa-complain /usr/share/openqa/script/openqa' | docker exec -i "$containername" bash -x
 set +e
 docker cp lib/common.sh "$containername":/lib
 docker exec -e TESTCASE="$testcase"  -i "$containername" bash < "$testcase"

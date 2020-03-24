@@ -1,4 +1,24 @@
 
+( 
+cd /opt/project
+# install -m 755 tools/geoiplookup_continent /usr/bin/geoiplookup_continent
+# install -m 755 tools/geoiplookup_city      /usr/bin/geoiplookup_city
+# install -m 755 tools/geoip-lite-update     /usr/bin/geoip-lite-update
+# install -m 755 tools/null-rsync            /usr/bin/null-rsync
+install -m 755 tools/scanner.pl            /usr/bin/scanner
+install -m 755 mirrorprobe/mirrorprobe.py  /usr/bin/mirrorprobe
+
+cd /opt/project/mod_mirrorbrain
+apxs -cia -lm mod_mirrorbrain.c
+)
+
+( 
+rm /usr/bin/mb
+rm /usr/lib64/python2.7/site-packages/mb/*
+cd /opt/project/mb && python setup.py install 
+patch /mb.diff
+sed -i '/^import errno/a database=\"\"' /usr/lib64/python2.7/site-packages/mb/geoip.py
+)
 
 systemctl start postgresql
 
@@ -22,25 +42,6 @@ setup_vhost() {
     mkdir -p /srv/www/vhosts/$site/downloads/{folder1,folder2,folder3}
     echo /srv/www/vhosts/$site/downloads/{folder1,folder2,folder3}/{file1,file2}.dat | xargs -n 1 touch
 }
-
-
-( 
-cd /opt/project
-# install -m 755 tools/geoiplookup_continent /usr/bin/geoiplookup_continent
-# install -m 755 tools/geoiplookup_city      /usr/bin/geoiplookup_city
-# install -m 755 tools/geoip-lite-update     /usr/bin/geoip-lite-update
-# install -m 755 tools/null-rsync            /usr/bin/null-rsync
-install -m 755 tools/scanner.pl            /usr/bin/scanner
-install -m 755 mirrorprobe/mirrorprobe.py  /usr/bin/mirrorprobe
-)
-
-( 
-rm /usr/bin/mb
-rm /usr/lib64/python2.7/site-packages/mb/*
-cd /opt/project/mb && python setup.py install 
-patch /mb.diff
-sed -i '/^import errno/a database=\"\"' /usr/lib64/python2.7/site-packages/mb/geoip.py
-)
 
 setup_vhost MAIN $((port++))
 
