@@ -1,0 +1,30 @@
+--- /usr/bin/mb.orig	2020-03-21 03:43:05.326099215 +0100
++++ /usr/bin/mb	2020-03-21 03:44:17.017830308 +0100
+@@ -165,18 +165,22 @@
+             sys.exit('At least an HTTP base URL needs to be specified (-H)')
+ 
+         scheme, host, path, a, b, c = urlparse.urlparse(opts.http)
++        asn, prefix = 0, ''
++        lat, lng = 0, 0
++
+         if ':' in host:
+             host, port = host.split(':')
+         if not opts.region:
+             opts.region = mb.geoip.lookup_region_code(host)
+         if not opts.country:
+             opts.country = mb.geoip.lookup_country_code(host)
+-        lat, lng = mb.geoip.lookup_coordinates(host)
++        if mb.geoip.database:
++            lat, lng = mb.geoip.lookup_coordinates(host)
+ 
+-        r = mb.asn.iplookup(self.conn, host)
+-        asn, prefix = r.asn, r.prefix
+-        if not asn: asn = 0
+-        if not prefix: prefix = ''
++            r = mb.asn.iplookup(self.conn, host)
++            asn, prefix = r.asn, r.prefix
++            if not asn: asn = 0
++            if not prefix: prefix = ''
+ 
+         if opts.region == '--' or opts.country == '--':
+             raise ValueError('Region lookup failed. Use the -c and -r option.')
