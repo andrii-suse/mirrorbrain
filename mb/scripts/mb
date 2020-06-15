@@ -180,7 +180,11 @@ class MirrorDoctor(cmdln.Cmdln):
             opts.region = mirrorbrain_host.region_code()
         if not opts.country:
             opts.country = mirrorbrain_host.country_code()
-        lat, lng = mirrorbrain_host.coordinates()
+        try:
+            lat, lng = mirrorbrain_host.coordinates()
+        except:
+            print('>>> warning: cannot detect coordinates ' + host, file=sys.stderr)
+            pass
 
         if opts.region == '--' or opts.country == '--':
             print('Detected geolocation: country = %s / region = %s' %
@@ -1001,6 +1005,8 @@ class MirrorDoctor(cmdln.Cmdln):
                              'subdirectory -- see examples)')
     @cmdln.option('-t', '--target-dir', metavar='PATH',
                         help='set the target directory (required)')
+    @cmdln.option('-R', '--rollout', action='store_true',
+                        help='do rollout, special record for optimized detection files on mirrors')
     @cmdln.option('-z', '--zsync-mask', metavar='REGEX',
                         help='regular expression to select files to create zsync hashes for')
     @cmdln.option('-v', '--verbose', action='store_true',
@@ -1016,7 +1022,7 @@ class MirrorDoctor(cmdln.Cmdln):
         Simplest Examples:
             mb makehashes -t /srv/metalink-hashes/srv/ooo /srv/ooo
 
-        This is aequivalent:
+        This is equivalent:
             mb makehashes -t /srv/metalink-hashes/srv/ooo -b /srv/ooo /srv/ooo
 
         Hash only the subdirectory extended/iso/de:
@@ -1129,6 +1135,7 @@ class MirrorDoctor(cmdln.Cmdln):
 
             dst_keep_db = set()
             dst_keep = set()
+            dst_new_file_ids = set()
             dst_keep.add('LOCK')
 
             # FIXME: given that we don't need -t parameter anymore... can we create a lock hierarchy in /tmp instead??
@@ -1196,12 +1203,14 @@ class MirrorDoctor(cmdln.Cmdln):
                                              dry_run=opts.dry_run,
                                              force=opts.force,
                                              copy_permissions=opts.copy_permissions)
-                        hasheable.check_db(conn=self.conn,
+                        file_id = hasheable.check_db(conn=self.conn,
                                            verbose=opts.verbose,
                                            dry_run=opts.dry_run,
                                            force=opts.force)
                         dst_keep.add(hasheable.dst_basename)
                         dst_keep_db.add(hasheable.basename)
+                        if opts.rollout and not dst_names_db_dict.get(hasheable.basename,0):
+                            dst_new_file_ids.add(file_id)
 
                 elif hasheable.isdir():
                     directories_todo.append(src)  # It's a directory, store it.
@@ -1278,8 +1287,14 @@ class MirrorDoctor(cmdln.Cmdln):
                 os.unlink(lockfile)
                 lock.close()
 
+        rollout_id = 0
+        if len(dst_new_file_ids) and opts.rollout:
+            rollout_id = mb.files.rollout_add(self.conn, startdir, dst_new_file_ids)
+
         if unlinked_files or unlinked_dirs:
             print('Unlinked %s files, %d directories.' % (unlinked_files, unlinked_dirs))
+        if opts.rollout:
+            print(rollout_id)
 
     def do_score(self, subcmd, opts, *args):
         """${cmd_name}: show or change the score of a mirror

@@ -90,6 +90,7 @@ my $sth_insert_rel;
 my $sth_select_file;
 my $sth_insert_file;
 my $sth_mirr_addbypath;
+my $sth_rollout_bypath;
 
 my $gig2 = 1<<31; # 2*1024*1024*1024 == 2^1 * 2^10 * 2^10 * 2^10 = 2^31
 
@@ -290,6 +291,7 @@ for my $row (@scan_list) {
 
   $sql = "CREATE INDEX temp1_key ON temp1 (id);
           ANALYZE temp1;
+          CREATE TEMPORARY TABLE temp_new_files(rollout_id integer NOT NULL, filearr_id integer NOT NULL);
           SELECT COUNT(*) FROM temp1";
   print "$sql\n" if $sqlverbose;
 
@@ -334,6 +336,8 @@ for my $row (@scan_list) {
   print localtime(time) . " $row->{identifier}: scanned $file_count files ("
          . int($fpm/60) . "/s) in "
          . int($duration) . "s\n" if $verbose > 0;
+
+  resolve_rollouts($row->{id}, $dbh, $start_dir);
 
   $start = time();
   print localtime(time) . " $row->{identifier}: purging old files\n" if $verbose > 1;
@@ -395,7 +399,52 @@ $dbh->disconnect();
 exit 0;
 ###################################################################################################
 
-
+sub resolve_rollouts
+{
+    my ($server_id, $dbh, $startdir) = @_;
+    $startdir = '' unless $startdir;
+    # if sum is above 0, then some files from rollout were missing in scan
+    my $sql = "select t.rollout_id, sum(case when t.filearr_id is null then 1 else 0 end)
+from rollout_filearr r
+left join temp_new_files t on (r.rollout_id, r.filearr_id) =
+(t.rollout_id, t.filearr_id) 
+where
+r.rollout_id in (select distinct rollout_id from temp_new_files)
+group by t.rollout_id
+";
+    print "$sql\n" if $sqlverbose;
+    my $sth = $dbh->prepare($sql) or die "$sql: ".$DBI::errstr;
+    $sth->execute() or die "$sql: ".$DBI::errstr;
+    my ($rollout_id, $something_missing);
+    $sth->bind_columns(\$rollout_id, \$something_missing) or die "$sql: ".$DBI::errstr;
+    my $sql1 = "select mirr_add_byid(?, filearr_id) from temp_new_files where rollout_id = ?";
+    my $sql2 = "delete from temp1 where id in (select filearr_id from temp_new_files where rollout_id = ?)";
+    my $sql3 = "delete from temp_new_files where rollout_id = ?)";
+    my ($sth1, $sth2, $sth3);
+    while ($sth->fetch) {
+         if (!$something_missing) {
+            next;
+        }
+        # add files from partal rollouts using mirr_add_byid
+        # remove them from temp1 
+        # remove them from temp_new_files
+        if (!defined $sth1) {
+            $sth1 = $dbh->prepare($sql1) or die "$sql1: ".$DBI::errstr;
+            $sth2 = $dbh->prepare($sql2) or die "$sql2: ".$DBI::errstr;
+            $sth3 = $dbh->prepare($sql3) or die "$sql3: ".$DBI::errstr;
+        }
+        $sth1->execute($server_id, $rollout_id) or die "$sql1: ".$DBI::errstr;
+        $sth2->execute($server_id, $rollout_id) or die "$sql2: ".$DBI::errstr;
+        $sth3->execute($rollout_id) or die "$sql3: ".$DBI::errstr;
+    }
+    # now temp_new_files contains only full rollouts, check them against rollout_server
+    if ($startdir) {
+        $dbh->do("delete from server_rollout using rollout where rollout_id = rollout.id and server_id = ? and rollout_id not in (select distinct rollout_id from temp_new_files) and path like ?", undef, $server_id, $startdir . "/%") or die "delete from server_rollout: ".$DBI::errstr;
+    } else {
+        $dbh->do("delete from server_rollout where server_id = ? and rollout_id not in (select distinct rollout_id from temp_new_files)", undef, $server_id) or die "delete from server_rollout: ".$DBI::errstr;
+    }
+    $dbh->do("insert into server_rollout select distinct cast(? as integer), rollout_id from temp_new_files where rollout_id not in (select rollout_id from server_rollout where server_id = ?)", undef, $server_id, $server_id) or die "insert into server_rollout: ".$DBI::errstr;
+}
 
 sub usage
 {
@@ -932,7 +981,18 @@ sub save_file
   # explicitely tell Perl that the filename is in UTF-8 encoding
   $path = decode_utf8($path);
 
-  my $sql = "SELECT mirr_add_bypath(?, ?);";
+  # collect all files which belong to rollouts into special table and will analyze them later
+  my $sql = "insert into temp_new_files SELECT rollout_id, filearr_id from rollout_filearr join filearr on filearr.id = filearr_id and path = ?;";
+  if (!defined $sth_rollout_bypath) {
+    printf "\nPreparing add statement\n\n" if $sqlverbose;
+    $sth_rollout_bypath = $dbh->prepare( $sql ) or die "$identifier: $DBI::errstr";
+  }
+  printf "$sql  <-- $path \n" if $sqlverbose;
+  my $rollout_rows = $sth_rollout_bypath->execute( $path ) or die "$identifier: $DBI::errstr";
+  $sth_rollout_bypath->finish;
+  return $path if $rollout_rows > 0;
+
+  $sql = "SELECT mirr_add_bypath(?, ?);";
   if (!defined $sth_mirr_addbypath) {
     printf "\nPreparing add statement\n\n" if $sqlverbose;
     $sth_mirr_addbypath = $dbh->prepare( $sql ) or die "$identifier: $DBI::errstr";

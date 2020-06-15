@@ -137,7 +137,7 @@
 #define DBD_LLD_FMT "lld"
 #endif
 
-#define DEFAULT_QUERY "SELECT id, identifier, region, country, " \
+#define DEFAULT_QUERY "SELECT server.id, identifier, region, country, " \
                              "lat, lng, " \
                              "asn, prefix, score, baseurl, " \
                              "region_only, country_only, " \
@@ -145,11 +145,23 @@
                              "other_countries, file_maxsize " \
                       "FROM server " \
                       "LEFT JOIN serverpfx ON id = serverid AND family(serverpfx.prefix) = family(ipaddress(%s)) " \
-                      "WHERE id::smallint = any(" \
-                          "(SELECT mirrors " \
-                           "FROM filearr " \
-                           "WHERE path = %s)::smallint[]) " \
-                      "AND enabled AND status_baseurl AND score > 0"
+                      "JOIN filearr f ON path = %s AND server.id::smallnt = any(f.mirrors)::smallint[] " \
+                      "WHERE enabled AND status_baseurl AND score > 0" \
+                      "UNION " \
+                      "SELECT server.id, identifier, region, country, " \
+                             "lat, lng, " \
+                             "asn, prefix, score, baseurl, " \
+                             "region_only, country_only, " \
+                             "as_only, prefix_only, " \
+                             "other_countries, file_maxsize " \
+                      "FROM server " \
+                      "LEFT JOIN serverpfx ON id = serverid AND family(serverpfx.prefix) = family(ipaddress(%s)) " \
+                      "JOIN server_rollout  sr ON server.id = sr.server_id " \
+                      "JOIN rollout_filearr rf ON sr.rollout_id = rf.rollout_id " \
+                      "JOIN filearr f1 ON path = %s AND f1.id = rf.filearr_id " \
+                      "WHERE enabled AND status_baseurl AND score > 0"
+
+
 #define DEFAULT_QUERY_HASH "SELECT file_id, md5hex, sha1hex, sha256hex, " \
                                   "sha1piecesize, sha1pieceshex, btihhex, pgp, " \
                                   "zblocksize, zhashlens, zsumshex " \
@@ -2031,7 +2043,7 @@ static int mb_handler(request_rec *r)
                       without it the mysql driver doesn't return results
                       once apr_dbd_num_tuples() has been called;
                       apr_dbd_get_row() will only return -1 after that. */
-                clientip, filename, NULL) != 0) {
+                clientip, filename, clientip, filename, NULL) != 0) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                 "[mod_mirrorbrain] Error looking up %s in database", filename);
         if (apr_is_empty_array(cfg->fallbacks)) {

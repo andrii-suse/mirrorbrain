@@ -135,13 +135,13 @@ class Hasheable:
 
             if dry_run:
                 print('Would create hashes in db for: ', self.src_rel)
-                return
+                return file_id
 
             if self.hb.empty:
                 self.hb.fill(verbose=verbose)
             if self.hb.empty:
                 sys.stderr.write('skipping db hash generation\n')
-                return
+                return file_id
 
             c.execute("BEGIN")
             if not res_filearr:
@@ -184,13 +184,13 @@ class Hasheable:
             if int(self.mtime) == mtime and self.size == size and not force:
                 if verbose:
                     print('Up to date in db: %r' % self.src_rel)
-                return
+                return file_id
 
             if self.hb.empty:
                 self.hb.fill(verbose=verbose)
             if self.hb.empty:
                 sys.stderr.write('skipping db hash generation\n')
-                return
+                return file_id
 
             zsums = ''
             for i in self.hb.zsums:
@@ -224,6 +224,7 @@ class Hasheable:
         c.execute('commit')
 
         self.hb = None
+        return file_id
 
     def __str__(self):
         return self.basename

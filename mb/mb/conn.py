@@ -328,6 +328,67 @@ class Conn:
                     idName = 'file_id'
             self.Hash = Hash
 
+        try:
+            class Rollout(SQLObject):
+                """the rollouts table"""
+                class sqlmeta:
+                    fromDatabase = True
+            self.Rollout = Rollout
+        except (dberrors.ProgrammingError, psycopg2.ProgrammingError):
+            print('', file=sys.stderr)
+            print('>>> A database table for hashes does not exit. Creating...', file=sys.stderr)
+            query = """
+CREATE TABLE "rollout" (
+    "id" serial NOT NULL PRIMARY KEY,
+    "dt" timestamp with time zone,
+    "path" varchar(512) NOT NULL,
+    "desc" varchar(512),
+    "gone" timestamp with time zone DEFAULT NULL
+);
+            """
+            Filearr._connection.query(query)
+            query = """
+CREATE TABLE "rollout_filearr" (
+    "rollout_id" integer NOT NULL,
+    "filearr_id" integer NOT NULL
+);
+            """
+            Filearr._connection.query(query)
+            query = """
+CREATE UNIQUE INDEX "rollout_filearr_unique_key" ON "rollout_filearr" (
+    "rollout_id", "filearr_id"
+);
+            """
+            Filearr._connection.query(query)
+            query = """
+CREATE INDEX "rollout_filearr_filearr_key" ON "rollout_filearr" (
+    "filearr_id"
+);
+            """
+            Filearr._connection.query(query)
+            query = """
+CREATE TABLE "server_rollout" (
+    "server_id" int NOT NULL,
+    "rollout_id" int NOT NULL
+);
+            """
+            Filearr._connection.query(query)
+            query = """
+CREATE UNIQUE INDEX "server_rollout_unique_key" ON "server_rollout" (
+    "server_id", "rollout_id"
+);
+            """
+            Filearr._connection.query(query)
+
+            print('>>> Done.', file=sys.stderr)
+            print('', file=sys.stderr)
+            # now try again
+            class Rollout(SQLObject):
+                """the rollouts table"""
+                class sqlmeta:
+                    fromDatabase = True
+            self.Rollout = Rollout
+
         if debug:
             self.Server._connection.debug = True
 

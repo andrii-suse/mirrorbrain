@@ -1,4 +1,4 @@
-from sqlobject.sqlbuilder import AND
+from sqlobject.sqlbuilder import AND, Insert
 
 from mb import util
 
@@ -161,7 +161,8 @@ def dir_filelist(conn, path):
                    FROM filearr
                LEFT JOIN hash
                    ON hash.file_id = filearr.id
-               WHERE filearr.dirname = '%s/'""" % util.pgsql_regexp_esc(path)
+               // TODO pgsql_regexp_esc?
+               WHERE filearr.dirname = '%s/'""" % path
 
     result = conn.Server._connection.queryAll(query)
     return result
@@ -190,6 +191,24 @@ def hashes_list_delete(conn, idlist):
 #        conn.Filearr._connection.query(query)
 #    except:
 #        pass
+
+def rollout_add(conn, path, idlist):
+    """Adds a rollout record and involved files"""
+    from datetime import datetime
+    conn = conn.Filearr._connection
+
+    dt = datetime.now()
+    query = """INSERT INTO rollout(dt, path)
+              VALUES('%s', '%s') RETURNING id"""
+    # TODO transaction
+    result = conn.queryAll(query % (dt, path))
+    rollout_id = result[0][0]
+ 
+    valueList = [([rollout_id]+[id]) for id in idlist]
+    insert = Insert('rollout_filearr', valueList=valueList)
+    query = conn.sqlrepr(insert)
+    conn.query(query)
+    return rollout_id
 
 def hashes_dir_delete(conn, base):
     """Deletes all rows from the hash table which correspond to paths in the
